@@ -58,6 +58,37 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(code, 2)
         sender.assert_not_called()
 
+    def test_delete_refuses_non_fixture_without_sending(self):
+        real = dict(FIXTURE, title="Client A Decisions v1")
+        with mock.patch.object(pp, "post", return_value={"document": real}), \
+                mock.patch.object(pp, "post_raw") as sender:
+            code, _, _ = run_quiet(["--key-env", "K", "--confirm-fixture-test", "delete", "d1"])
+        self.assertEqual(code, 2)
+        sender.assert_not_called()
+
+    def test_comment_targets_document_content(self):
+        fixture = dict(FIXTURE, documentContentId="dc-1")
+        with mock.patch.object(pp, "post", side_effect=[{"document": fixture}, {"document": fixture}]), \
+                mock.patch.object(pp, "post_raw", return_value=(200, {"data": {}})) as sender:
+            code, _, _ = run_quiet(["--key-env", "K", "--confirm-fixture-test", "comment", "d1", "hi"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sender.call_args[0][1], {"input": {"documentContentId": "dc-1", "body": "hi"}})
+
+    def test_project_create_requires_fixture_name(self):
+        with mock.patch.object(pp, "post_raw") as sender:
+            code, _, _ = run_quiet(["--key-env", "K", "--confirm-fixture-test", "project-create",
+                                    "Client A Portal", "--team-ids", "t1"])
+        self.assertEqual(code, 2)
+        sender.assert_not_called()
+
+    def test_project_teams_refuses_non_fixture_project(self):
+        with mock.patch.object(pp, "post", return_value={"project": {"id": "p", "name": "Real", "teams": {}}}), \
+                mock.patch.object(pp, "post_raw") as sender:
+            code, _, _ = run_quiet(["--key-env", "K", "--confirm-fixture-test", "project-teams",
+                                    "p", "--team-ids", "t1,t2"])
+        self.assertEqual(code, 2)
+        sender.assert_not_called()
+
     def test_fixture_update_sent_and_change_detected(self):
         changed = dict(FIXTURE, content="mutated")
         with mock.patch.object(pp, "post", side_effect=[{"document": FIXTURE}, {"document": changed}]), \

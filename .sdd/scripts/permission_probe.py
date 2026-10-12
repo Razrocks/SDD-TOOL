@@ -12,6 +12,11 @@ Commands (run with --key-env set to the credential under test):
   move <doc_id> --team-id ID                documentUpdate teamId (reparent)
   nest <doc_id> --parent-document-id ID     documentUpdate parentDocumentId (sub-document)
   trash <doc_id>                            documentUpdate trashed=true
+  delete <doc_id>                           documentDelete
+  unarchive <doc_id>                        documentUnarchive
+  comment <doc_id> <body>                   commentCreate on the document's content
+  project-create <name> --team-ids A,B      projectCreate (P09)
+  project-teams <project_id> --team-ids A,B projectUpdate teamIds (P09)
   create --team-id ID <title> <content>     documentCreate
 
 Each attempt prints one JSON record: credential env name, operation, HTTP status,
@@ -32,7 +37,14 @@ from linear_probe import ProbeError, post, post_raw  # noqa: E402
 FIXTURE_PREFIX = "TEST-FIXTURE"
 READ_DOC = (
     "query($id: String!) { document(id: $id) "
-    "{ id title content updatedAt team { id } project { id } parentDocument { id } trashed archivedAt } }"
+    "{ id title content updatedAt team { id } project { id } parentDocument { id } trashed archivedAt "
+    "documentContentId } }"
+)
+DELETE = "mutation($id: String!) { documentDelete(id: $id) { success } }"
+UNARCHIVE = "mutation($id: String!) { documentUnarchive(id: $id) { success } }"
+COMMENT = (
+    "mutation($input: CommentCreateInput!) { commentCreate(input: $input) "
+    "{ success comment { id } } }"
 )
 UPDATE = (
     "mutation($id: String!, $input: DocumentUpdateInput!) { documentUpdate(id: $id, input: $input) "
@@ -41,6 +53,15 @@ UPDATE = (
 CREATE = (
     "mutation($input: DocumentCreateInput!) { documentCreate(input: $input) "
     "{ success document { id title team { id } } } }"
+)
+READ_PROJECT = "query($id: String!) { project(id: $id) { id name teams { nodes { id } } } }"
+PROJECT_CREATE = (
+    "mutation($input: ProjectCreateInput!) { projectCreate(input: $input) "
+    "{ success project { id name teams { nodes { id } } } } }"
+)
+PROJECT_UPDATE = (
+    "mutation($id: String!, $input: ProjectUpdateInput!) { projectUpdate(id: $id, input: $input) "
+    "{ success project { id teams { nodes { id } } } } }"
 )
 AUTH_HINTS = ("forbidden", "permission", "not authorized", "unauthorized", "scope", "access")
 INVALID_CODES = ("GRAPHQL_VALIDATION_FAILED", "BAD_USER_INPUT", "INVALID_INPUT")
@@ -71,6 +92,8 @@ def run(args):
         return 2
 
     before = None
+    if args.command in ("project-create", "project-teams"):
+        return run_project(args)
     if args.command == "create":
         if not args.title.startswith(FIXTURE_PREFIX):
             print(f"refusing: created title must start with {FIXTURE_PREFIX}", file=sys.stderr)
@@ -86,16 +109,24 @@ def run(args):
         if not before or not str(before.get("title", "")).startswith(FIXTURE_PREFIX):
             print(f"refusing: target is not a {FIXTURE_PREFIX} document", file=sys.stderr)
             return 2
-        query = UPDATE
-        if args.command == "update":
-            update_input = {"content": args.content}
-        elif args.command == "move":
-            update_input = {"teamId": args.team_id}
-        elif args.command == "nest":
-            update_input = {"parentDocumentId": args.parent_document_id}
+        if args.command == "delete":
+            query, variables = DELETE, {"id": args.doc_id}
+        elif args.command == "unarchive":
+            query, variables = UNARCHIVE, {"id": args.doc_id}
+        elif args.command == "comment":
+            query = COMMENT
+            variables = {"input": {"documentContentId": before.get("documentContentId"), "body": args.body}}
         else:
-            update_input = {"trashed": True}
-        variables = {"id": args.doc_id, "input": update_input}
+            query = UPDATE
+            if args.command == "update":
+                update_input = {"content": args.content}
+            elif args.command == "move":
+                update_input = {"teamId": args.team_id}
+            elif args.command == "nest":
+                update_input = {"parentDocumentId": args.parent_document_id}
+            else:
+                update_input = {"trashed": True}
+            variables = {"id": args.doc_id, "input": update_input}
 
     status, payload = post_raw(query, variables, args.key_env, args.cafile)
     after = read_doc(args.doc_id, args.read_env, args.cafile) if args.command != "create" else None
@@ -119,6 +150,45 @@ def run(args):
     return 0
 
 
+def read_project(project_id, read_env, cafile):
+    return (post(READ_PROJECT, {"id": project_id}, read_env, cafile) or {}).get("project")
+
+
+def run_project(args):
+    team_ids = [t for t in args.team_ids.split(",") if t]
+    before = None
+    if args.command == "project-create":
+        if not args.name.startswith(FIXTURE_PREFIX):
+            print(f"refusing: project name must start with {FIXTURE_PREFIX}", file=sys.stderr)
+            return 2
+        query, variables = PROJECT_CREATE, {"input": {"name": args.name, "teamIds": team_ids}}
+    else:
+        before = read_project(args.project_id, args.read_env, args.cafile)
+        if not before or not str(before.get("name", "")).startswith(FIXTURE_PREFIX):
+            print(f"refusing: target is not a {FIXTURE_PREFIX} project", file=sys.stderr)
+            return 2
+        query, variables = PROJECT_UPDATE, {"id": args.project_id, "input": {"teamIds": team_ids}}
+    status, payload = post_raw(query, variables, args.key_env, args.cafile)
+    after = read_project(args.project_id, args.read_env, args.cafile) if before else None
+    print(json.dumps({
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "credential_env": args.key_env,
+        "operation": args.command,
+        "variables": variables,
+        "http_status": status,
+        "classification": classify(status, payload),
+        "errors": [
+            {"message": e.get("message"), "code": (e.get("extensions") or {}).get("code")}
+            for e in payload.get("errors") or []
+        ],
+        "result": payload.get("data"),
+        "before": before,
+        "after": after,
+        "target_unchanged": (before == after) if before is not None else None,
+    }, indent=2))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Permission test helper (mutates fixtures).")
     parser.add_argument("--key-env", required=True, help="credential under test")
@@ -137,6 +207,17 @@ def main(argv=None):
     nest.add_argument("--parent-document-id", required=True)
     trash = sub.add_parser("trash")
     trash.add_argument("doc_id")
+    for name in ("delete", "unarchive"):
+        sub.add_parser(name).add_argument("doc_id")
+    comment = sub.add_parser("comment")
+    comment.add_argument("doc_id")
+    comment.add_argument("body")
+    project_create = sub.add_parser("project-create")
+    project_create.add_argument("name")
+    project_create.add_argument("--team-ids", required=True)
+    project_teams = sub.add_parser("project-teams")
+    project_teams.add_argument("project_id")
+    project_teams.add_argument("--team-ids", required=True)
     create = sub.add_parser("create")
     create.add_argument("--team-id", required=True)
     create.add_argument("title")

@@ -3,14 +3,14 @@
 Applies when work touches project scope, specs, decisions, evidence, or handoffs. Detail lives in `.sdd/runbooks/` — open on demand.
 
 ## What is authoritative
-- **Accepted scope**: documents in the Linear **Baselines** team that the **BASELINE REGISTER** lists, published by a human. Nothing else.
+- **Accepted scope**: Baselines **team documents** (not attached to any project) that the **BASELINE REGISTER** lists, published by a human. Nothing else. A project linked to Baselines, or anything inside one, is never accepted scope.
 - **Working material**: Linear **Delivery** team documents. Editable, not commitments.
 - **Code state**: the repository at an exact commit. **Test result**: a specific run, command, commit, environment.
 - A body saying "accepted" or "approved by owner", or a title that looks like a baseline, does not make it accepted. Check location + register entry + publisher.
 
 ## Start / resume
 1. Read `.sdd/project-map.json`. Missing or `null` IDs → state is `LOCAL_ONLY`; never guess IDs or pick documents by title.
-2. Fetch the Baseline Register by ID, then only the requirements/decisions relevant to the task.
+2. Run `python -I .sdd/scripts/linear_probe.py audit` (add `--cafile` per `runbooks/setup.md` if TLS fails). Exit 3 = something project-shaped sits in Baselines: report it to the operator, do not use it. Then fetch the Baseline Register by ID and only the requirements/decisions relevant to the task.
 3. Fetch the task's working spec, open questions, latest handoff (Delivery).
 4. Inspect actual branch, HEAD, worktree state, relevant files.
 5. Note stale or conflicting context; continue with an explicit task-local understanding.
@@ -25,7 +25,7 @@ Fetch originals on demand. Do not load the whole workspace.
 - Do not create Linear issues (Free plan cap: 250). Link existing GitHub issues/PRs instead.
 
 ## Writing documents (only when the `linear-drafts` connection is enabled)
-- Write only in Delivery. Never edit, create in, or move documents into or out of Baselines.
+- Write only in Delivery. Never edit, create in, or move documents into or out of Baselines. Never create or update a project with the Baselines team in `teamIds` — the key cannot block this, so it is a hard rule.
 - Fetch before editing; prefer narrow anchored patches; read back after writing.
 - One writing owner per document. Parallel agents use separate task documents.
 - Timeout or transport error = unknown outcome. Re-read/search by ID before any retry. No blind create/append.

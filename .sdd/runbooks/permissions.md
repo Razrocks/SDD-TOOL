@@ -38,5 +38,13 @@ A denial counts only if: (1) the same operation succeeds on an allowed fixture w
 ## On unexpected protected write
 Stop writer use. Record before/after. Revoke `sdd-drafts` key (Linear → Settings → Account → Security & Access). Human restores fixture from recorded body. Read back to confirm. Never broaden a key to make a test pass.
 
+## Known gap: projects linked to Baselines (P09)
+Tested 2026-10-12: a Delivery-only Read+Write key **can** `projectCreate` with `teamIds` including Baselines (adding Baselines to an existing project did not take effect). It cannot touch Baselines team documents or the register.
+Operator decision (2026-10-12): accept with detection, not prevention.
+- Accepted scope = Baselines **team documents** listed in the register. Projects never live in Baselines.
+- `linear_probe.py audit` flags any project linked to Baselines and documents inside it; agents run it at start/resume.
+- Finding → operator reviews and deletes in the Linear UI.
+Stronger option if this ever matters more: move Baselines to a separate free workspace.
+
 ## Guarantee scope
 A pass covers only the tested key, runtime, parent arrangement, and operations — not future Linear behavior.

@@ -94,5 +94,58 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(sent["variables"], {"id": "abc"})
 
 
+class AuditTests(unittest.TestCase):
+    BASE = "team-base"
+
+    def project(self, pid, *teams):
+        return {"id": pid, "name": pid, "teams": {"nodes": [{"id": t} for t in teams]}}
+
+    def test_clean_workspace_has_no_findings(self):
+        projects = [self.project("p1", "team-del")]
+        docs = [{"id": "d1", "team": {"id": self.BASE}, "project": None},
+                {"id": "d2", "team": None, "project": {"id": "p1"}}]
+        findings, team_docs, info = lp.find_violations(projects, docs, self.BASE)
+        self.assertEqual(findings, [])
+        self.assertEqual(team_docs, 1)
+        self.assertEqual(info, [])
+
+    def test_trashed_linked_project_is_info_not_finding(self):
+        projects = [dict(self.project("p-cross", "team-del", self.BASE), trashed=True)]
+        docs = [{"id": "d9", "team": None, "project": {"id": "p-cross"}}]
+        findings, _, info = lp.find_violations(projects, docs, self.BASE)
+        self.assertEqual(findings, [])
+        self.assertEqual(info[0]["kind"], "inactive_project_linked_to_baselines")
+
+    def test_archived_baselines_document_not_counted(self):
+        docs = [{"id": "d1", "team": {"id": self.BASE}, "project": None, "archivedAt": "2026-10-12T00:00:00Z"}]
+        _, team_docs, _ = lp.find_violations([], docs, self.BASE)
+        self.assertEqual(team_docs, 0)
+
+    def test_project_linked_to_baselines_flagged_with_its_documents(self):
+        projects = [self.project("p-cross", "team-del", self.BASE)]
+        docs = [{"id": "d9", "team": None, "project": {"id": "p-cross"}}]
+        kinds = sorted(f["kind"] for f in lp.find_violations(projects, docs, self.BASE)[0])
+        self.assertEqual(kinds, ["document_in_baselines_linked_project", "project_linked_to_baselines"])
+
+    def test_baselines_document_attached_to_project_flagged(self):
+        docs = [{"id": "d3", "team": {"id": self.BASE}, "project": {"id": "p-other"}}]
+        findings, _, _ = lp.find_violations([], docs, self.BASE)
+        self.assertEqual(findings[0]["kind"], "baselines_document_attached_to_project")
+
+    def test_audit_exit_code_3_on_findings(self):
+        pages = {
+            "projects": {"nodes": [self.project("p-cross", self.BASE)], "pageInfo": {"hasNextPage": False, "endCursor": None}},
+            "documents": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}},
+        }
+
+        def fake_call(query, variables, key_env, cafile=None):
+            return {"projects": pages["projects"]} if "projects(" in query else {"documents": pages["documents"]}
+
+        with mock.patch.object(lp, "call", fake_call), contextlib.redirect_stdout(io.StringIO()) as out:
+            code = lp.main(["audit", "--baselines-team-id", self.BASE])
+        self.assertEqual(code, 3)
+        self.assertIn('"result": "FINDINGS"', out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
