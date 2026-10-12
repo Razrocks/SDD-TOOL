@@ -1,0 +1,26 @@
+{
+  "schema": "sdd-project-map/1",
+  "state": "LOCAL_ONLY",
+  "note": "Copy to .sdd/project-map.json (gitignored) and fill only with IDs verified through the read connection. null = unresolved. Never fill from examples or by title guess.",
+  "workspace": { "id": null, "name": null, "url_key": null, "plan_verified": null, "verified_at": null },
+  "teams": {
+    "baselines": { "id": null, "key": null, "verified_at": null },
+    "delivery": { "id": null, "key": null, "verified_at": null }
+  },
+  "project": { "id": null, "name": null, "url": null, "verified_at": null },
+  "documents": {
+    "baseline_register": { "id": null, "url": null },
+    "policy_reference": { "id": null, "url": null },
+    "start_here": { "id": null, "url": null },
+    "working_spec": { "id": null, "url": null },
+    "implementation_plan": { "id": null, "url": null },
+    "evidence_and_questions": { "id": null, "url": null },
+    "handoff": { "id": null, "url": null }
+  },
+  "repository": { "remote": null },
+  "credentials": {
+    "read": { "env": "LINEAR_READ_KEY", "permissions": "Read only", "teams": "Baselines + Delivery", "verified_at": null },
+    "drafts": { "env": "LINEAR_DRAFTS_KEY", "permissions": "minimum write, Delivery only, no Admin", "certified_at": null }
+  },
+  "unresolved": ["All IDs pending READ_ONLY_VERIFIED"]
+}

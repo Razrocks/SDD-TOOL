@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "linear-read": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp/readonly",
+      "headers": { "Authorization": "Bearer ${LINEAR_READ_KEY}" }
+    }
+  }
+}
