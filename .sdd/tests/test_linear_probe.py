@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import ssl
 import sys
 import unittest
 from pathlib import Path
@@ -32,15 +33,30 @@ class ProbeTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         seen = {}
 
-        def fake_urlopen(request, timeout):
+        def fake_urlopen(request, timeout, context=None):
             seen["request"] = request
+            seen["context"] = context
             return FakeResponse(payload or {"data": {}})
 
         with mock.patch.dict(os.environ, {"LINEAR_READ_KEY": FAKE_KEY}), \
                 mock.patch.object(lp.urllib.request, "urlopen", fake_urlopen), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = lp.main(argv)
+        self.last_context = seen.get("context")
         return code, out.getvalue(), err.getvalue(), seen.get("request")
+
+    def test_default_uses_system_trust(self):
+        self.run_main(["whoami"])
+        self.assertIsNone(self.last_context)
+
+    def test_cafile_keeps_verification_on(self):
+        real_context = ssl.create_default_context()
+        with mock.patch.object(lp.ssl, "create_default_context", return_value=real_context) as factory:
+            self.run_main(["--cafile", "bundle.pem", "whoami"])
+        factory.assert_called_once_with(cafile="bundle.pem")
+        self.assertIs(self.last_context, real_context)
+        self.assertEqual(self.last_context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(self.last_context.check_hostname)
 
     def test_mutation_query_refused(self):
         with self.assertRaises(lp.ProbeError):
