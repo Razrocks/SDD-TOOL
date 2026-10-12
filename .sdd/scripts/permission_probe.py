@@ -10,6 +10,7 @@ Safety rails:
 Commands (run with --key-env set to the credential under test):
   update <doc_id> <content>                 documentUpdate content
   move <doc_id> --team-id ID                documentUpdate teamId (reparent)
+  nest <doc_id> --parent-document-id ID     documentUpdate parentDocumentId (sub-document)
   trash <doc_id>                            documentUpdate trashed=true
   create --team-id ID <title> <content>     documentCreate
 
@@ -31,7 +32,7 @@ from linear_probe import ProbeError, post, post_raw  # noqa: E402
 FIXTURE_PREFIX = "TEST-FIXTURE"
 READ_DOC = (
     "query($id: String!) { document(id: $id) "
-    "{ id title content updatedAt team { id } project { id } trashed archivedAt } }"
+    "{ id title content updatedAt team { id } project { id } parentDocument { id } trashed archivedAt } }"
 )
 UPDATE = (
     "mutation($id: String!, $input: DocumentUpdateInput!) { documentUpdate(id: $id, input: $input) "
@@ -90,6 +91,8 @@ def run(args):
             update_input = {"content": args.content}
         elif args.command == "move":
             update_input = {"teamId": args.team_id}
+        elif args.command == "nest":
+            update_input = {"parentDocumentId": args.parent_document_id}
         else:
             update_input = {"trashed": True}
         variables = {"id": args.doc_id, "input": update_input}
@@ -129,6 +132,9 @@ def main(argv=None):
     move = sub.add_parser("move")
     move.add_argument("doc_id")
     move.add_argument("--team-id", required=True)
+    nest = sub.add_parser("nest")
+    nest.add_argument("doc_id")
+    nest.add_argument("--parent-document-id", required=True)
     trash = sub.add_parser("trash")
     trash.add_argument("doc_id")
     create = sub.add_parser("create")
