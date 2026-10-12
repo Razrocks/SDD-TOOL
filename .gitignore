@@ -11,6 +11,10 @@
 .sdd/exports/
 .sdd/pending/
 
+# Local Claude instructions (not shared)
+CLAUDE.md
+CLAUDE.local.md
+
 # Live MCP config may reference real servers; examples live in .sdd/config/
 .mcp.json
 .claude/settings.local.json
