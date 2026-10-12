@@ -72,7 +72,7 @@ class SnapshotTests(unittest.TestCase):
             code = vs.main([str(self.write(complete=False))])
         self.assertEqual(code, 0)
         self.assertIn("PARTIAL", out.getvalue())
-        self.assertIn("does not prove export completeness", out.getvalue())
+        self.assertIn("Does not prove export completeness", out.getvalue())
 
     def test_parent_traversal_rejected(self):
         self.assertRejected(self.write([self.entry(path="../a.md")]), "'..'")
