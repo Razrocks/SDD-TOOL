@@ -1,8 +1,16 @@
-"""Branch docs and draft fork/merge for the SDD workflow. Stdlib only.
+"""Branch docs, local-first doc editing, and draft fork/merge for the SDD workflow. Stdlib only.
 
 Writes go only to Delivery (LINEAR_DRAFTS_KEY); reads use LINEAR_READ_KEY. Nothing here can
 change an accepted doc — the final merge is applied by owner-approved `lock.py apply`.
 
+Docs are edited as local files, then sent to Linear: pull copies a doc to .sdd/work/, you edit
+the file, push writes it back (only your own docs, only if Linear didn't change meanwhile, read
+back and verified). Linear being down never blocks editing; unpushed edits wait locally.
+
+  pull  <doc_id>                                         copy a Delivery doc to .sdd/work/<name>.md
+  push  <doc_id>                                         send your local edits to Linear (verified)
+  new   "<P> / <path> / <name>" [--from-file F]          create a doc from a local file
+  work                                                   local docs: clean, edited (unpushed), conflict
   branch-open  [--branch B] [--owner NAME] [--pr URL]   find or create "<P> / Branch / <B>"
   branch-close [--branch B] --status merged|abandoned [--merge-commit SHA]
   branches                                               list branch docs and their status
@@ -17,6 +25,7 @@ the current git branch; owner defaults to your Linear name.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -34,7 +43,9 @@ CREATE = ("mutation($input: DocumentCreateInput!) { documentCreate(input: $input
           "{ success document { id title url } } }")
 UPDATE = ("mutation($id: String!, $input: DocumentUpdateInput!) { documentUpdate(id: $id, input: $input) "
           "{ success document { id title url } } }")
-VIEWER = "query { viewer { name } }"
+VIEWER = "query { viewer { id name } }"
+DOC_WORK = ("query($id: String!) { document(id: $id) { id title url updatedAt content team { id } "
+            "project { id teams { nodes { id } } } creator { id name } } }")
 STATUS_SUFFIX = re.compile(r" \((merged|abandoned|partly-merged|rejected)\)$")
 
 
@@ -102,6 +113,215 @@ def find_by_title(docs, title, team_id):
     return hits[0] if hits else None
 
 
+# ------------------------------------------------------------------ local-first editing
+
+def digest(text):
+    return lp.content_digest(text)[0]
+
+
+def work_dir(map_path):
+    return Path(map_path).parent / "work"
+
+
+def load_index(map_path):
+    try:
+        return json.loads((work_dir(map_path) / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_index(map_path, index):
+    folder = work_dir(map_path)
+    folder.mkdir(parents=True, exist_ok=True)
+    tmp = folder / "index.json.tmp"
+    tmp.write_text(json.dumps(index, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, folder / "index.json")
+
+
+def file_name(title, doc_id, index):
+    parts = [re.sub(r"[^a-z0-9]+", "-", p.lower()).strip("-") for p in (title or "doc").split(" / ")]
+    name = "--".join(p for p in parts if p)[:120] or "doc"
+    taken = {e.get("file") for i, e in index.items() if i != doc_id}
+    return f"{name}.md" if f"{name}.md" not in taken else f"{name}-{doc_id[:8]}.md"
+
+
+def work_paths(map_path, doc_id, entry):
+    folder = work_dir(map_path)
+    return folder / entry["file"], folder / ".base" / f"{doc_id}.md", folder / (entry["file"][:-3] + ".linear.md")
+
+
+def put(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="")
+
+
+def local_state(map_path, doc_id, entry):
+    """clean (same as Linear at last sync), edited (not pushed yet), conflict, or missing."""
+    local, base, _ = work_paths(map_path, doc_id, entry)
+    if not local.exists():
+        return "missing"
+    if entry.get("conflict_sha"):
+        return "conflict"
+    base_text = base.read_text(encoding="utf-8") if base.exists() else ""
+    same = sdd_merge.comparable(local.read_text(encoding="utf-8")) == sdd_merge.comparable(base_text)
+    return "clean" if same else "edited"
+
+
+def synced(map_path, index, doc, text):
+    """Local file and base both become Linear's text (Linear's formatting wins once verified)."""
+    entry = index.setdefault(doc["id"], {"file": file_name(doc.get("title"), doc["id"], index)})
+    local, base, linear_copy = work_paths(map_path, doc["id"], entry)
+    put(local, text)
+    put(base, text)
+    if linear_copy.exists():
+        linear_copy.unlink()
+    entry.update({"title": doc.get("title"), "url": doc.get("url"), "base_sha256": digest(text), "synced_at": today()})
+    entry.pop("conflict_sha", None)
+    save_index(map_path, index)
+    return local
+
+
+def doc_teams(doc):
+    """Team ids a doc lives under: its own team, or (for a doc inside a project) the project's teams."""
+    teams = {(doc.get("team") or {}).get("id")}
+    teams.update(t.get("id") for t in (((doc.get("project") or {}).get("teams") or {}).get("nodes") or []))
+    return teams - {None}
+
+
+def get_work_doc(doc_id, cafile):
+    doc = read(DOC_WORK, {"id": doc_id}, cafile).get("document")
+    if not doc:
+        raise DocsError(f"document {doc_id} not found")
+    return doc
+
+
+def require_pushed(map_path, doc_id, what):
+    entry = load_index(map_path).get(doc_id)
+    if entry and local_state(map_path, doc_id, entry) in ("edited", "conflict"):
+        raise DocsError(f"{what} has local edits not in Linear yet; run  sdd_docs.py push {doc_id}  first")
+
+
+def pull(map_path, project_map, doc_id, cafile):
+    doc = get_work_doc(doc_id, cafile)
+    if project_map["teams"]["baselines"]["id"] in doc_teams(doc):
+        raise DocsError("this is an accepted (Baselines) doc: change it through a draft "
+                        "(sdd_docs.py draft <id>), then pull the draft")
+    index = load_index(map_path)
+    entry = index.get(doc["id"])
+    remote = doc.get("content") or ""
+    out = {"id": doc["id"], "title": doc.get("title"), "url": doc.get("url")}
+    if not entry or local_state(map_path, doc["id"], entry) == "missing":
+        return dict(out, action="pulled", file=str(synced(map_path, index, doc, remote)))
+    local, base, linear_copy = work_paths(map_path, doc["id"], entry)
+    state = local_state(map_path, doc["id"], entry)
+    changed = digest(remote) not in (entry.get("base_sha256"), entry.get("conflict_sha"))
+    if state == "clean":
+        action = "updated from Linear" if digest(remote) != entry.get("base_sha256") else "up to date"
+        return dict(out, action=action, file=str(synced(map_path, index, doc, remote)))
+    if not changed:
+        note = (f"conflict still open: fold what should stay from {linear_copy.name} into your file, then push"
+                if state == "conflict" else "your local edits aren't pushed yet; Linear unchanged")
+        return dict(out, action="kept", file=str(local), note=note)
+    base_text = base.read_text(encoding="utf-8") if base.exists() else ""
+    merge = sdd_merge.plan(base_text, local.read_text(encoding="utf-8"), remote)
+    if not any(item["conflict"] for item in merge["items"]):
+        merged, _ = sdd_merge.build(merge, {item["id"]: "keep" for item in merge["items"]})
+        put(local, merged)
+        put(base, remote)
+        entry.update({"base_sha256": digest(remote), "title": doc.get("title"), "synced_at": today()})
+        entry.pop("conflict_sha", None)
+        save_index(map_path, index)
+        return dict(out, action="merged", file=str(local),
+                    note="Linear had changes that don't overlap yours; both are in your file now. Review, then push.")
+    put(linear_copy, remote)
+    entry["conflict_sha"] = digest(remote)
+    save_index(map_path, index)
+    return dict(out, action="conflict", file=str(local), linear_copy=str(linear_copy),
+                describe=sdd_merge.describe(merge, mine="your file", theirs="Linear copy"),
+                next="Edit your file so it holds what should stay from both, then push.")
+
+
+def cmd_pull(args):
+    map_path, project_map, _ = context(args)
+    return pull(map_path, project_map, args.doc_id, args.cafile)
+
+
+def first_differences(sent, after, limit=3):
+    a, b = sdd_merge.comparable(sent), sdd_merge.comparable(after)
+    rows = [{"sent": x, "linear": y} for x, y in zip(a, b) if x != y]
+    if len(a) != len(b):
+        rows.append({"blocks_sent": len(a), "blocks_in_linear": len(b)})
+    return rows[:limit]
+
+
+def cmd_push(args):
+    map_path, project_map, _ = context(args)
+    index = load_index(map_path)
+    entry = index.get(args.doc_id)
+    if not entry:
+        raise DocsError(f"not pulled here; run  sdd_docs.py pull {args.doc_id}  and edit that file")
+    state = local_state(map_path, args.doc_id, entry)
+    if state == "missing":
+        raise DocsError(f"local file {entry['file']} is gone; pull again")
+    if state == "clean":
+        return {"action": "nothing to push", "id": args.doc_id, "title": entry.get("title")}
+    local, _, _ = work_paths(map_path, args.doc_id, entry)
+    text = local.read_text(encoding="utf-8")
+    doc = get_work_doc(args.doc_id, args.cafile)
+    if doc_teams(doc) != {project_map["teams"]["delivery"]["id"]}:
+        raise DocsError("only Delivery docs are pushed; accepted docs change through draft + merge")
+    viewer = (lp.call(VIEWER, {}, DRAFTS_KEY_ENV, args.cafile) or {}).get("viewer") or {}
+    creator = doc.get("creator") or {}
+    if not creator.get("id") or creator.get("id") != viewer.get("id"):
+        raise DocsError(f"not your doc (owner: {creator.get('name') or 'unknown'}). One owner per doc: "
+                        "put your note in your own branch doc, or ask the owner")
+    if digest(doc.get("content")) not in (entry.get("base_sha256"), entry.get("conflict_sha")):
+        raise DocsError(f"changed in Linear since your pull; run  sdd_docs.py pull {args.doc_id}  "
+                        "(changes that don't overlap yours merge automatically), then push")
+    write(UPDATE, {"id": doc["id"], "input": {"content": text}}, args.cafile)
+    after = get_work_doc(doc["id"], args.cafile)
+    after_text = after.get("content") or ""
+    out = {"action": "pushed", "id": doc["id"], "title": after.get("title"), "url": after.get("url")}
+    if sdd_merge.comparable(after_text) == sdd_merge.comparable(text):
+        synced(map_path, index, after, after_text)
+        return dict(out, verified=True)
+    entry["conflict_sha"] = digest(after_text)      # our own write, kept differently: allow a retry
+    save_index(map_path, index)
+    return dict(out, verified=False, differences=first_differences(text, after_text),
+                note="Linear's copy differs from your file after the write. Your file is kept; check, then push again.")
+
+
+def cmd_new(args):
+    map_path, project_map, prefix = context(args)
+    title = args.title.strip()
+    if not title.startswith(f"{prefix} / ") or len(title) <= len(prefix) + 3:
+        raise DocsError(f'title must be "{prefix} / <optional path> / <name>"')
+    delivery = project_map["teams"]["delivery"]["id"]
+    if find_by_title(all_docs(args.cafile), title, delivery):
+        raise DocsError("a doc with this title already exists; pull it and edit that instead")
+    text = Path(args.from_file).read_text(encoding="utf-8-sig") if args.from_file else ""
+    created = write(CREATE, {"input": {"teamId": delivery, "title": title, "content": text}}, args.cafile)
+    doc = created["documentCreate"]["document"]
+    after = get_work_doc(doc["id"], args.cafile)
+    local = synced(map_path, load_index(map_path), after, after.get("content") or "")
+    return {"action": "created", "id": doc["id"], "title": doc["title"], "url": doc.get("url"), "file": str(local),
+            "verified": sdd_merge.comparable(after.get("content")) == sdd_merge.comparable(text)}
+
+
+def work_status(map_path):
+    rows = []
+    for doc_id, entry in load_index(map_path).items():
+        local, _, _ = work_paths(map_path, doc_id, entry)
+        rows.append({"id": doc_id, "title": entry.get("title"), "file": str(local),
+                     "state": local_state(map_path, doc_id, entry)})
+    return rows
+
+
+def cmd_work(args):
+    map_path, _, _ = context(args)
+    return {"docs": work_status(map_path)}
+
+
 # ------------------------------------------------------------------ branch docs
 
 def branch_title(prefix, branch):
@@ -134,7 +354,7 @@ def cmd_branch_open(args):
 
 
 def cmd_branch_close(args):
-    _, project_map, prefix = context(args)
+    map_path, project_map, prefix = context(args)
     branch = args.branch or git_branch()
     if not branch:
         raise DocsError("not on a git branch; pass --branch")
@@ -142,6 +362,7 @@ def cmd_branch_close(args):
     doc = find_by_title(all_docs(args.cafile), title, project_map["teams"]["delivery"]["id"])
     if not doc:
         raise DocsError(f"no open branch doc titled {title!r}")
+    require_pushed(map_path, doc["id"], "the branch doc")
     body = get_doc(doc["id"], args.cafile).get("content") or ""
     note = f"Status: {args.status} {today()}" + (f" (merge commit {args.merge_commit})" if args.merge_commit else "")
     body = re.sub(r"^Status: .*$", note, body, count=1, flags=re.M) if re.search(r"^Status: ", body, re.M) \
@@ -203,7 +424,8 @@ def cmd_draft(args):
     title = f"{base['title']} / draft ({owner}{', ' + branch if branch else ''})"
     existing = find_by_title(all_docs(args.cafile), title, project_map["teams"]["delivery"]["id"])
     if existing:
-        return {"action": "opened", "id": existing["id"], "title": title, "url": existing.get("url")}
+        return dict(local_copy(map_path, project_map, existing["id"], args.cafile),
+                    action="opened", id=existing["id"], title=title, url=existing.get("url"))
     sha, _ = lp.content_digest(base.get("content"))
     snapshots = map_path.parent / "snapshots"
     snapshots.mkdir(parents=True, exist_ok=True)
@@ -214,12 +436,24 @@ def cmd_draft(args):
     created = write(CREATE, {"input": {"teamId": project_map["teams"]["delivery"]["id"], "title": title,
                                        "content": content}}, args.cafile)
     doc = created["documentCreate"]["document"]
-    return {"action": "created", "id": doc["id"], "title": doc["title"], "url": doc.get("url"),
-            "base": base["title"], "base_sha256": sha}
+    return dict(local_copy(map_path, project_map, doc["id"], args.cafile),
+                action="created", id=doc["id"], title=doc["title"], url=doc.get("url"),
+                base=base["title"], base_sha256=sha)
+
+
+def local_copy(map_path, project_map, doc_id, cafile):
+    """Pull a draft so it's edited as a local file. Failing to pull never undoes the draft."""
+    try:
+        pulled = pull(map_path, project_map, doc_id, cafile)
+        return {"file": pulled["file"], "local": pulled["action"],
+                "edit": "edit the file below the marker line, then push"}
+    except (DocsError, lp.ProbeError) as exc:
+        return {"file": None, "local": f"not pulled ({exc}); run  sdd_docs.py pull {doc_id}"}
 
 
 def load_plan_inputs(args):
     map_path, project_map, _ = context(args)
+    require_pushed(map_path, args.draft_id, "this draft")
     draft = get_doc(args.draft_id, args.cafile)
     fields, body = parse_draft(draft.get("content"))
     current = get_doc(fields["base-id"], args.cafile)
@@ -278,7 +512,8 @@ def cmd_draft_close(args):
             "verified": after.get("title") == new_title}
 
 
-COMMANDS = {"branch-open": cmd_branch_open, "branch-close": cmd_branch_close, "branches": cmd_branches,
+COMMANDS = {"pull": cmd_pull, "push": cmd_push, "new": cmd_new, "work": cmd_work,
+            "branch-open": cmd_branch_open, "branch-close": cmd_branch_close, "branches": cmd_branches,
             "draft": cmd_draft, "merge-plan": cmd_merge_plan, "merge-build": cmd_merge_build,
             "draft-close": cmd_draft_close}
 
@@ -289,6 +524,12 @@ def main(argv=None):
     parser.add_argument("--project-map", default=None)
     parser.add_argument("--project", default=None, help="title prefix; defaults to doc_prefix in the map")
     sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("pull", "push"):
+        sub.add_parser(name).add_argument("doc_id")
+    p = sub.add_parser("new")
+    p.add_argument("title")
+    p.add_argument("--from-file")
+    sub.add_parser("work")
     p = sub.add_parser("branch-open")
     p.add_argument("--branch")
     p.add_argument("--owner")

@@ -3,7 +3,7 @@ name: merge
 description: Merge a draft back into its accepted doc with the owner reviewing every change (keep, drop, edit; conflicts with changes merged since the fork are flagged). Use when a draft is ready.
 ---
 
-1. `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/sdd_docs.py" merge-plan <draft id>` — prints numbered changes; conflicts mean the accepted doc changed the same part since the fork.
+1. `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/sdd_docs.py" merge-plan <draft id>` — prints numbered changes; conflicts mean the accepted doc changed the same part since the fork. If it says the draft has local edits, `push` the draft first.
 2. Show the owner the accepted doc's **title** and every numbered change exactly as printed. Ask for a decision on each:
    - normal change: keep | drop | edit (owner's own wording)
    - conflict: draft | current | both | edit

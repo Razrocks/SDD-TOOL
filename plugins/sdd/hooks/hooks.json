@@ -43,6 +43,17 @@
             "statusMessage": "Checking lock gate"
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*linear-drafts__save_document",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-I", "${CLAUDE_PLUGIN_ROOT}/scripts/hook_doc_writes.py"],
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

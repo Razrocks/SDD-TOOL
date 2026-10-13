@@ -33,6 +33,9 @@ Nobody is forced. At the start of a fresh session in an SDD repo, Claude asks on
 
 Once it's on, SDD runs by itself: at session start it checks Linear in the background, opens your branch doc on feature branches, and hands Claude the status with your first message.
 
+## Local first, then Linear
+Claude edits Linear docs as local files: `sdd_docs.py pull <id>` copies a doc to `.sdd/work/` (gitignored), Claude edits that file, and `sdd_docs.py push <id>` sends it back. Push only writes your own docs, refuses if the doc changed in Linear since the pull (pull again: changes that don't overlap merge automatically; overlaps leave a `.linear.md` copy to reconcile), and reads back to verify. New docs start as local files (`sdd_docs.py new "<prefix> / <path> / <name>" --from-file <file>`). Direct `save_document` writes are blocked where SDD is on. Linear being down never stops editing: unpushed edits wait locally and are flagged at the next session start. Accepted docs still only change through draft → merge → approved `lock.py apply`.
+
 ## Daily use
 `/sdd:resume` start or continue · `/sdd:branch` your branch doc · `/sdd:checkpoint` save a handoff · `/sdd:draft` + `/sdd:merge` change an accepted doc · `/sdd:lock` accept a new doc · `/sdd:merged` close a branch after merge · `/sdd:on` / `/sdd:off` opt in or out.
 

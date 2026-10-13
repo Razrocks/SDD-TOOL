@@ -30,6 +30,17 @@ def join(block_list):
     return "\n\n".join(block_list) + ("\n" if block_list else "")
 
 
+AUTOLINK = re.compile(r"\[([^\]\n]+)\]\(<?(?:https?://)?\1>?\)")
+BULLET = re.compile(r"^(\s*)[-+*] ", re.M)
+
+
+def comparable(text):
+    """Blocks with Linear's own reformatting undone ('-' bullets saved as '*', bare file names
+    turned into links, trailing spaces), so a read-back can be compared with what was sent."""
+    text = AUTOLINK.sub(r"\1", text or "")
+    return ["\n".join(line.rstrip() for line in BULLET.sub(r"\1* ", b).splitlines()) for b in blocks(text)]
+
+
 SIMILAR = 0.5
 
 
@@ -194,7 +205,7 @@ def build(merge_plan, decisions):
     return join(out), summary
 
 
-def describe(merge_plan, limit=280):
+def describe(merge_plan, limit=280, mine="draft", theirs="accepted doc"):
     """Human-readable numbered list of decisions to make."""
     def show(part):
         text = " / ".join(part) if part else "(nothing)"
@@ -202,12 +213,12 @@ def describe(merge_plan, limit=280):
 
     lines = []
     if merge_plan["baseline_changed_since_fork"]:
-        lines.append("Note: the accepted doc changed since this draft was forked.")
+        lines.append(f"Note: the {theirs} changed since this {mine} was {'forked' if mine == 'draft' else 'pulled'}.")
     for item in merge_plan["items"]:
         if item["conflict"]:
-            lines.append(f"{item['id']}. CONFLICT ({item['kind']} in draft, also changed in accepted doc)")
-            lines.append(f"   accepted now: {show(item['current'])}")
-            lines.append(f"   draft:        {show(item['draft'])}")
+            lines.append(f"{item['id']}. CONFLICT ({item['kind']} in {mine}, also changed in {theirs})")
+            lines.append(f"   {theirs} now: {show(item['current'])}")
+            lines.append(f"   {mine}: {show(item['draft'])}")
             lines.append("   decide: draft | current | both | edit")
         else:
             lines.append(f"{item['id']}. {item['kind'].upper()}")

@@ -313,7 +313,8 @@ def merge_settings(existing):
 
 
 def merge_gitignore(text):
-    needed = [".sdd/merges/", ".sdd/pending/", ".sdd/status.json", ".sdd/.status-shown.json", ".sdd/optin.json"]
+    needed = [".sdd/merges/", ".sdd/pending/", ".sdd/status.json", ".sdd/.status-shown.json", ".sdd/optin.json",
+              ".sdd/work/"]
     lines = text.splitlines() if text else []
     missing = [n for n in needed if n not in lines]
     if not missing:

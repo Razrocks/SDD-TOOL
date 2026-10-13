@@ -23,6 +23,7 @@ CLAUDE.local.md
 .sdd/status.json
 .sdd/.status-shown.json
 .sdd/optin.json
+.sdd/work/
 
 # Python
 __pycache__/

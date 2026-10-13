@@ -167,7 +167,7 @@ def run(args):
     verified = ((after.get("team") or {}).get("id") == expected_team and not after.get("project")
                 and after.get("title", title) == expected_title and not errors)
     if verified and args.command == "apply":
-        verified = sdd_merge.blocks(after.get("content")) == sdd_merge.blocks(merged)
+        verified = sdd_merge.comparable(after.get("content")) == sdd_merge.comparable(merged)
 
     after_record = None
     if verified:

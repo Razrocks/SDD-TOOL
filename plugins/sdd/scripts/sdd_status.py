@@ -118,7 +118,12 @@ def refresh(session_id, cwd):
     project_map = json.loads(map_path.read_text(encoding="utf-8-sig"))
     prefix = project_map.get("doc_prefix")
     status = {"session_id": session_id, "generated_at": now(), "prefix": prefix, "problems": [],
-              "audit": None, "accepted": [], "branch": None, "branch_doc": None, "handoff": None}
+              "audit": None, "accepted": [], "branch": None, "branch_doc": None, "handoff": None, "unpushed": []}
+    try:
+        import sdd_docs
+        status["unpushed"] = [row for row in sdd_docs.work_status(map_path) if row["state"] in ("edited", "conflict")]
+    except Exception:  # noqa: BLE001 - local check only; never break the session
+        pass
     missing = [k for k in REQUIRED_KEYS if not os.environ.get(k)]
     if missing:
         status["problems"].append(f"Linear keys missing: {', '.join(missing)}. Run the setup wizard (sdd_setup.py dev), "
@@ -168,6 +173,10 @@ def summarize(status):
     lines = [f"SDD status (auto, {status.get('generated_at')}) for prefix '{status.get('prefix')}':"]
     for problem in status.get("problems") or []:
         lines.append(f"- ATTENTION: {problem}")
+    for row in status.get("unpushed") or []:
+        what = "conflict to resolve" if row.get("state") == "conflict" else "edited locally, not in Linear yet"
+        lines.append(f"- ATTENTION: {row.get('title')} - {what}: {row.get('file')} "
+                     f"(sdd_docs.py push {row.get('id')})")
     if status.get("audit") and status["audit"] != "CLEAN":
         lines.append(f"- ATTENTION: Baselines audit: {status['audit']} (don't use flagged items)")
     for row in status.get("accepted") or []:

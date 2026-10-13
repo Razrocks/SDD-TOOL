@@ -36,7 +36,7 @@ def run(argv, reads=(), writes=(), listing=()):
 
     def fake_call(query, variables, key_env, cafile=None):
         if "viewer" in query:
-            return {"viewer": {"name": "Alex"}}
+            return {"viewer": {"id": "u1", "name": "Alex"}}
         return reads.pop(0)
 
     with mock.patch.object(docs.lp, "call", side_effect=fake_call), \
@@ -105,9 +105,16 @@ class BranchTests(unittest.TestCase):
 class DraftMergeTests(unittest.TestCase):
     def test_draft_forks_with_header_and_base_snapshot(self):
         p = Project()
-        code, out, _, sender = run(p.args("draft", "acc1", "--branch", "feature-x"), reads=[{"document": ACCEPTED}],
+        sha = docs.lp.content_digest(ACCEPTED["content"])[0]
+        text = docs.draft_header(ACCEPTED, sha, "Alex", "feature-x") + "\n\n" + ACCEPTED["content"]
+        readback = {"id": "dr1", "title": "Dice Roller / Requirements v1 / draft (Alex, feature-x)", "url": "u",
+                    "content": text, "team": {"id": DEL}, "creator": {"id": "u1", "name": "Alex"}}
+        code, out, _, sender = run(p.args("draft", "acc1", "--branch", "feature-x"),
+                                   reads=[{"document": ACCEPTED}, {"document": readback}],
                                    writes=[created("dr1", "x")])
         self.assertEqual(code, 0)
+        local = Path(json.loads(out)["file"])
+        self.assertEqual(local.read_text(encoding="utf-8"), text)       # edited locally, then pushed
         sent = sender.call_args[0][1]["input"]
         self.assertEqual(sent["title"], "Dice Roller / Requirements v1 / draft (Alex, feature-x)")
         fields, body = docs.parse_draft(sent["content"])
