@@ -17,8 +17,9 @@ CLAUDE.md
 CLAUDE.local.md
 
 # Live MCP config may reference real servers; examples live in .sdd/config/
-.mcp.json
+/.mcp.json
 .claude/settings.local.json
+.sdd/merges/
 
 # Python
 __pycache__/

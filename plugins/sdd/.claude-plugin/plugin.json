@@ -1,0 +1,9 @@
+{
+  "name": "sdd",
+  "version": "0.1.0",
+  "description": "Linear-first spec-driven development: locked baselines, one-owner branch docs, draft fork/merge with owner review, approval-gated locking.",
+  "author": { "name": "Razrocks" },
+  "repository": "https://github.com/Razrocks/SDD-TOOL",
+  "license": "MIT",
+  "keywords": ["sdd", "linear", "specs", "documentation"]
+}

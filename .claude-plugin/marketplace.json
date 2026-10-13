@@ -1,0 +1,12 @@
+{
+  "name": "sdd-tool",
+  "owner": { "name": "Razrocks" },
+  "metadata": { "description": "Agency SDD workflow plugin: Linear-first specs, locked baselines, draft merges" },
+  "plugins": [
+    {
+      "name": "sdd",
+      "source": "./plugins/sdd",
+      "description": "Linear-first SDD: locked baselines, one-owner branch docs, draft fork/merge with owner review"
+    }
+  ]
+}

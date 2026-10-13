@@ -1,0 +1,21 @@
+{
+  "schema": "sdd-project-map/2",
+  "note": "Copy to .sdd/project-map.json in the project repo and commit it (private client repo). Fill IDs only from the read connection (linear_probe.py whoami / teams). null = unresolved.",
+  "doc_prefix": null,
+  "workspace": { "id": null, "name": null, "url_key": null },
+  "teams": {
+    "baselines": { "id": null, "key": null },
+    "delivery": { "id": null, "key": null }
+  },
+  "project": { "id": null, "name": null, "url": null },
+  "entry_points": {
+    "start_here": { "id": null, "url": null }
+  },
+  "repository": { "remote": null },
+  "baselines": [],
+  "credentials": {
+    "read": { "env": "LINEAR_READ_KEY", "permissions": "Read, all teams" },
+    "drafts": { "env": "LINEAR_DRAFTS_KEY", "permissions": "Read + Write, Delivery only" },
+    "lock": { "env": "LINEAR_LOCK_KEY", "permissions": "Write, Baselines + Delivery (scope approvers only)" }
+  }
+}
