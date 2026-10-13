@@ -94,6 +94,60 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(sent["variables"], {"id": "abc"})
 
 
+class BaselineTests(unittest.TestCase):
+    BASE = "team-base"
+
+    def test_accepted_set_rules(self):
+        docs = [
+            {"id": "a", "title": "Pong Requirements v1", "team": {"id": self.BASE}, "project": None},
+            {"id": "f", "title": "TEST-FIXTURE BASE-FX", "team": {"id": self.BASE}, "project": None},
+            {"id": "p", "title": "In a project", "team": {"id": self.BASE}, "project": {"id": "x"}},
+            {"id": "t", "title": "Trashed", "team": {"id": self.BASE}, "project": None, "trashed": True},
+            {"id": "d", "title": "Draft", "team": {"id": "team-del"}, "project": None},
+        ]
+        accepted, fixtures = lp.accepted_set(docs, self.BASE)
+        self.assertEqual([d["id"] for d in accepted], ["a"])
+        self.assertEqual([d["id"] for d in fixtures], ["f"])
+
+    def test_digest_is_sha256_of_utf8_body(self):
+        import hashlib
+        digest, size = lp.content_digest("héllo")
+        self.assertEqual(digest, hashlib.sha256("héllo".encode("utf-8")).hexdigest())
+        self.assertEqual(size, 6)
+        self.assertEqual(lp.content_digest(None)[1], 0)
+
+    def test_baseline_lists_accepted_with_digest(self):
+        listing = {"documents": {"nodes": [
+            {"id": "a", "title": "Req v1", "url": "u", "updatedAt": "t", "team": {"id": self.BASE}, "project": None}],
+            "pageInfo": {"hasNextPage": False, "endCursor": None}}}
+
+        def fake_call(query, variables, key_env, cafile=None):
+            if "documents(" in query:
+                return listing
+            return {"document": {"id": "a", "content": "REQ-001"}}
+
+        with mock.patch.object(lp, "call", fake_call), contextlib.redirect_stdout(io.StringIO()) as out:
+            code = lp.main(["baseline", "--baselines-team-id", self.BASE])
+        self.assertEqual(code, 0)
+        result = json.loads(out.getvalue())
+        self.assertEqual(result["accepted"][0]["sha256"], lp.content_digest("REQ-001")[0])
+
+    def test_snapshot_writes_body_and_digest(self):
+        import tempfile
+        doc = {"id": "a", "title": "Req v1", "url": "u", "updatedAt": "t", "content": "REQ-001 text",
+               "team": {"id": self.BASE, "name": "Baselines"}, "project": None}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lp, "call", return_value={"document": doc}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = lp.main(["snapshot", "a", "--out", tmp])
+            result = json.loads(out.getvalue())
+            saved = Path(result["saved"]).read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertTrue(saved.endswith("REQ-001 text"))
+        self.assertIn(lp.content_digest("REQ-001 text")[0], saved)
+        self.assertEqual(result["team"], "Baselines")
+
+
 class AuditTests(unittest.TestCase):
     BASE = "team-base"
 

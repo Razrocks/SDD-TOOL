@@ -1,10 +1,24 @@
-# Baseline publication (human only)
+# Lock and unlock (owner approves every move)
 
-1. Read the proposal's exact delta and its cited source passages. Check sources support the claim, not just exist.
-2. Decide: accept / reject / need info. Fill the proposal's Decision block yourself.
-3. Accepted: in Linear UI, create the new Baselines document version (e.g. `Requirements v2`) under the Baselines team. Keep v1; mark it superseded in its header.
-4. Publish all needed documents **first**.
-5. Update the **Baseline Register last**: new row, move old row to Superseded, published by/at, optional digest (`python -I .sdd/scripts/verify_snapshot.py` on an export).
-6. Tell agents: "Baseline changed — refresh and list affected specs, plans, tests, handoffs."
+Accepted = what sits in the **Baselines** team as a team document. The set changes only by moving documents.
 
-Never paste an agent's text as accepted without reading the delta. Agents never perform steps 3–5. Corrections create a new version; history is not erased.
+## How a move happens
+1. Agent asks a clickable question: "Lock <title>?" / "Unlock <title>?" (unlock comes with the exact proposed change).
+2. You answer yes or no. No → nothing moves.
+3. Yes → agent runs `lock.py lock|unlock <id>`. Claude shows a **permission prompt** (forced by the `hook_lock_gate.py` hook) — Allow = second confirmation.
+4. `lock.py` moves the doc (team change only, no content edits), reads it back, prints `verified: true`. Unlock snapshots the locked text first.
+5. Agent confirms with `linear_probe.py baseline` and `audit`.
+
+You can still move docs yourself in the Linear UI (document menu → move team); the agent checks the result with `baseline`.
+
+## Unlock window
+While a doc is in Delivery it is not accepted; its last accepted text is the snapshot (`.sdd/snapshots/`, path + sha256 in evidence). Review the diff in Linear version history before approving the re-lock.
+
+## What protects accepted docs (honest)
+- `linear-drafts` (the agent's normal writing connection) cannot see Baselines — enforced by key scope (P04–P08).
+- `LINEAR_LOCK_KEY` can move docs and sits on this PC. Its use is gated by your two confirmations (question + permission prompt) and by the rules — **not** by key scope. A process deliberately ignoring the rules could misuse it. Revoke `sdd-lock` in Linear to fall back to manual moves.
+- Run `baseline` regularly: sha256 changes show any unexpected edit.
+
+## Never
+- Accepted docs inside a project (`baseline` ignores them; `audit` flags projects linked to Baselines).
+- Erasing history: corrections are new revisions.

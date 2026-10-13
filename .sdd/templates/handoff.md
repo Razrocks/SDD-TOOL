@@ -8,7 +8,7 @@ Status: working
 
 ## <YYYY-MM-DD HH:MM> — <author/agent>
 - Task: <…>
-- Baseline used: <Register entry; REQ IDs>
+- Baseline used: <locked doc IDs + sha256 from `baseline`; REQ IDs>
 - Code state: branch <…> · HEAD <SHA> · dirty: yes/no · pushed: yes/no
 - Changed: files <…> · docs <IDs>
 - Verification done: <VER IDs or "none">

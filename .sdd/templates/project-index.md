@@ -12,8 +12,8 @@ Owner: <project owner, or UNRESOLVED>
 <GitHub repo URL> · default branch: <branch>
 
 ## Accepted baseline
-Register: <Baseline Register link> · current entry: <requirements doc link, version> · <decisions doc link, version>
-If the register is mid-update, use the previous complete entry and flag it.
+Locked in Baselines: <requirements doc link> · <decisions doc link> (run `linear_probe.py baseline` for the live list + sha256)
+If a doc is unlocked for revision, its last accepted text is the latest snapshot in 30 EVIDENCE.
 
 ## Current work
 - <Task> — spec: <10 WORKING SPEC link/section> · GitHub: <issue/PR link> · owner: <name>

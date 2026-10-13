@@ -9,7 +9,6 @@
   },
   "project": { "id": null, "name": null, "url": null, "verified_at": null },
   "documents": {
-    "baseline_register": { "id": null, "url": null },
     "policy_reference": { "id": null, "url": null },
     "start_here": { "id": null, "url": null },
     "working_spec": { "id": null, "url": null },

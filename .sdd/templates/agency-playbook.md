@@ -5,11 +5,14 @@ Kind: playbook
 Status: working
 Owner: <workspace steward, or UNRESOLVED>
 
-> Delivery-team working guide. It does **not** grant permissions and cannot change publication rules. Binding policy lives in Baselines (see Baseline Register → policy reference).
+> Delivery-team working guide. It does **not** grant permissions and cannot change lock rules. Binding policy lives in Baselines.
+
+## Docs
+Any development doc, any format, any author style. The only rule is the title: `<Project> / <optional path> / <name>`. These templates are optional starters, never required structure.
 
 ## Where things live
-- **Baselines team** — accepted requirements and decisions, Baseline Register. Human-published only.
-- **Delivery team** — one project per engagement: 00 START HERE, 10 WORKING SPEC, 20 IMPLEMENTATION PLAN, 30 EVIDENCE AND QUESTIONS, 40 HANDOFF. Extra documents only when they have their own purpose.
+- **Baselines team** — accepted (locked) requirements and decisions. Only a human moves docs in (lock) or out (unlock).
+- **Delivery team** — every working doc for every engagement, any type. A start page and a handoff help agents resume; everything else is up to the team.
 - **GitHub** — code, issues, PRs, CI. Unchanged. Linear docs link to it; no issue mirroring.
 
 ## Roles (one person may hold several)
@@ -22,7 +25,7 @@ Owner: <workspace steward, or UNRESOLVED>
 Scope, acceptance criteria, security/data assumptions, external commitments, significant architecture constraints. Batch related proposals. Routine plan/spec edits do not need review.
 
 ## Status words
-working · proposed · accepted (only via publication + register) · superseded.
+working · proposed · accepted (only by sitting in Baselines) · superseded.
 Evidence support: observed · agent-reported · externally sourced · not yet verified.
 
 ## Separations to keep

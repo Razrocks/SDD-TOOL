@@ -9,9 +9,9 @@ States: `LOCAL_ONLY` → `READ_ONLY_VERIFIED` → `DRAFT_WRITER_VERIFIED`. Recor
 
 ## B. Workspace structure (operator, Linear UI)
 1. Teams: **Baselines** and **Delivery** (reuse only if purpose fits).
-2. Delivery → team settings → Templates: paste `.sdd/templates/*.md` (except baseline-register, requirements).
-3. Baselines → team home: create **BASELINE REGISTER** from `baseline-register.md` and pilot **Requirements v1** from `requirements.md`, both as team documents, status `AWAITING HUMAN PUBLICATION`.
-4. Delivery → create project for the pilot; add 00–40 documents from templates.
+2. Delivery → team settings → Templates: paste `.sdd/templates/*.md`.
+3. Delivery → create project for the pilot; add 00–40 documents from templates.
+4. Requirements are drafted in Delivery as team documents and locked by moving them to Baselines (`publication.md`). Baselines never has projects.
 Documents can attach to teams, projects, initiatives, issues, cycles (Linear docs, checked 2026-10-11).
 
 ## C. Read-only connection
@@ -40,6 +40,12 @@ Documents can attach to teams, projects, initiatives, issues, cycles (Linear doc
 3. Store as `LINEAR_DRAFTS_KEY` (same method), restart app.
 4. Run P01–P13. Any protected write → revoke key immediately (Security & Access → delete), restore fixture from recorded content.
 5. Only after all required tests pass: merge `linear-drafts` from `mcp.read-and-drafts.example.json` into `.mcp.json`.
+
+## F. Lock key (approve-in-Claude moves)
+1. New API key `sdd-lock`: **Write** (Read optional), team access **Baselines + Delivery**, no Admin.
+2. Store as `LINEAR_LOCK_KEY` (same no-history method), restart the app.
+3. User-level hook `hook_lock_gate.py` (in `~/.claude/settings.json`, PreToolUse on Bash|PowerShell) forces a permission prompt for any command mentioning `lock.py` or `LINEAR_LOCK_KEY`.
+4. Never add this key to `.mcp.json`. Revoke it to return to manual moves.
 
 ## Optional operator decision
 Agent edits are attributed to the key's owner. A dedicated member (e.g. `agency-agent`, free on unlimited-member plan) owning both keys makes agent vs human edits distinguishable in history. This is a membership change — operator only.

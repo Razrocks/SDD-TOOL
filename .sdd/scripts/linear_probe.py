@@ -10,6 +10,13 @@ Commands:
                               flag projects linked to the Baselines team and documents
                               inside them (Baselines must only hold team documents).
                               Team ID defaults to .sdd/project-map.json. Exit 3 = findings.
+  baseline [--baselines-team-id ID] [--project NAME]
+                              the accepted set: active Baselines team documents, no project,
+                              not TEST-FIXTURE, with a sha256 of each body. Replaces a register.
+                              --project keeps titles starting with "<NAME> / ".
+  snapshot <doc_id> [--out DIR]
+                              save a document's current body + sha256 to DIR (default
+                              .sdd/snapshots). Run before unlocking a Baselines document.
 
 Options: --key-env NAME (default LINEAR_READ_KEY)
          --cafile PATH  verify TLS against this CA bundle only (default: system store).
@@ -20,12 +27,14 @@ No mutations exist in this script.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import ssl
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 API = "https://api.linear.app/graphql"
@@ -35,6 +44,10 @@ QUERIES = {
     "teams": "query { teams(first: 100) { nodes { id key name private } pageInfo { hasNextPage endCursor } } }",
     "doc": "query($id: String!) { document(id: $id) { id title url updatedAt project { id name } } }",
     "doc_content": "query($id: String!) { document(id: $id) { id title url updatedAt project { id name } content } }",
+    "doc_snapshot": (
+        "query($id: String!) { document(id: $id) "
+        "{ id title url updatedAt content team { id name } project { id name } } }"
+    ),
     "introspect": "query($name: String!) { __type(name: $name) { name kind fields { name } inputFields { name } } }",
 }
 
@@ -45,7 +58,8 @@ AUDIT_PROJECTS = (
 )
 AUDIT_DOCUMENTS = (
     "query($after: String) { documents(first: 100, after: $after, includeArchived: true) "
-    "{ nodes { id title url archivedAt trashed team { id } project { id } } pageInfo { hasNextPage endCursor } } }"
+    "{ nodes { id title url updatedAt archivedAt trashed team { id } project { id } } "
+    "pageInfo { hasNextPage endCursor } } }"
 )
 MAX_PAGES = 50
 PROJECT_MAP = Path(__file__).resolve().parents[1] / "project-map.json"
@@ -90,6 +104,24 @@ def find_violations(projects, documents, baselines_id):
     team_docs = [d for d in documents
                  if (d.get("team") or {}).get("id") == baselines_id and not d.get("project") and not inactive(d)]
     return findings, len(team_docs), info
+
+
+FIXTURE_PREFIX = "TEST-FIXTURE"
+
+
+def accepted_set(documents, baselines_id):
+    """Accepted = active Baselines team documents with no project. Fixtures are listed apart."""
+    accepted, fixtures = [], []
+    for doc in documents:
+        if inactive(doc) or (doc.get("team") or {}).get("id") != baselines_id or doc.get("project"):
+            continue
+        (fixtures if str(doc.get("title", "")).startswith(FIXTURE_PREFIX) else accepted).append(doc)
+    return accepted, fixtures
+
+
+def content_digest(content):
+    data = (content or "").encode("utf-8")
+    return hashlib.sha256(data).hexdigest(), len(data)
 
 
 def paginate(query, root, key_env, cafile):
@@ -183,11 +215,71 @@ def run_audit(args):
         "findings": findings,
         "inactive_info": info,
         "result": "FINDINGS" if findings else ("CLEAN" if complete else "INCOMPLETE"),
-        "note": "Detects only; does not prevent. Accepted scope = Baselines team documents listed in the Baseline Register.",
+        "note": "Detects only; does not prevent. Accepted scope = Baselines team documents (no project); see `baseline`.",
     }, indent=2))
     if findings:
         return 3
     return 0 if complete else 1
+
+
+def run_baseline(args):
+    baselines_id = args.baselines_team_id or baselines_team_from_map()
+    if not baselines_id:
+        print("no Baselines team ID: pass --baselines-team-id or fill .sdd/project-map.json", file=sys.stderr)
+        return 2
+    try:
+        documents, complete = paginate(AUDIT_DOCUMENTS, "documents", args.key_env, args.cafile)
+        accepted, fixtures = accepted_set(documents, baselines_id)
+        if getattr(args, "project", None):
+            accepted = [d for d in accepted if str(d.get("title", "")).startswith(f"{args.project} / ")]
+        rows = []
+        for doc in accepted:
+            body = (call(QUERIES["doc_snapshot"], {"id": doc["id"]}, args.key_env, args.cafile) or {})["document"]
+            digest, size = content_digest(body.get("content"))
+            rows.append({"id": doc["id"], "title": doc.get("title"), "url": doc.get("url"),
+                         "updatedAt": doc.get("updatedAt"), "sha256": digest, "bytes": size})
+    except ProbeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps({
+        "baselines_team_id": baselines_id,
+        "scan_complete": complete,
+        "accepted": rows,
+        "fixtures_excluded": [{"id": d["id"], "title": d.get("title")} for d in fixtures],
+        "note": "Accepted = what sits in Baselines now. A document moved back to Delivery is not accepted "
+                "until it is moved back; use its latest snapshot as the last accepted text.",
+    }, indent=2))
+    return 0 if complete else 1
+
+
+def run_snapshot(args):
+    try:
+        doc = (call(QUERIES["doc_snapshot"], {"id": args.doc_id}, args.key_env, args.cafile) or {}).get("document")
+    except ProbeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not doc:
+        print(f"document {args.doc_id} not found for this key", file=sys.stderr)
+        return 1
+    fetched = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    digest, size = content_digest(doc.get("content"))
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{fetched.replace(':', '')}-{doc['id']}.md"
+    header = [
+        f"Snapshot of: {doc.get('title')}",
+        f"Document ID: {doc['id']}",
+        f"Team: {(doc.get('team') or {}).get('name')} · Project: {(doc.get('project') or {}).get('name')}",
+        f"URL: {doc.get('url')}",
+        f"Fetched at: {fetched} · Linear updatedAt: {doc.get('updatedAt')}",
+        f"Body sha256: {digest} ({size} bytes)",
+        "---",
+    ]
+    path.write_text("\n".join(header) + "\n" + (doc.get("content") or ""), encoding="utf-8", newline="\n")
+    print(json.dumps({"saved": str(path), "document": doc["id"], "title": doc.get("title"),
+                      "team": (doc.get("team") or {}).get("name"), "sha256": digest, "bytes": size,
+                      "fetched_at": fetched}, indent=2))
+    return 0
 
 
 def main(argv=None):
@@ -204,10 +296,20 @@ def main(argv=None):
     intro.add_argument("type_name")
     audit = sub.add_parser("audit")
     audit.add_argument("--baselines-team-id", default=None)
+    baseline = sub.add_parser("baseline")
+    baseline.add_argument("--baselines-team-id", default=None)
+    baseline.add_argument("--project", default=None, help='only titles starting with "<project> / "')
+    snapshot = sub.add_parser("snapshot")
+    snapshot.add_argument("doc_id")
+    snapshot.add_argument("--out", default=str(Path(".sdd") / "snapshots"))
     args = parser.parse_args(argv)
 
     if args.command == "audit":
         return run_audit(args)
+    if args.command == "baseline":
+        return run_baseline(args)
+    if args.command == "snapshot":
+        return run_snapshot(args)
     if args.command == "doc":
         query = QUERIES["doc_content" if args.content else "doc"]
         variables = {"id": args.id}

@@ -23,4 +23,4 @@ Code: <…> · Tests: <…> · Dependent docs to reassess: <…>
 ## Decision (filled by human reviewer only)
 - Outcome: accepted · rejected · needs info
 - Authorizer: <name — never filled by an agent>
-- Published as: <Baselines doc ID/version>
+- Applied to: <locked doc ID> · snapshot before edit: <path + sha256> · re-locked: <date>

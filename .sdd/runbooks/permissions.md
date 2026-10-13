@@ -9,7 +9,7 @@ Results: `PASS` · `FAIL` · `BLOCKED` · `NOT_TESTED` · `UNSUPPORTED`. `UNSUPP
 |---|---|---|---|
 | BASE-FX | Baselines team document | `TEST-FIXTURE BASE-FX — not real scope` | `fixture-v1 <random word>` |
 | DEL-FX | Delivery team document | `TEST-FIXTURE DEL-FX` | `fixture-v1 <random word>` |
-Record both IDs and exact bodies. List them under "Test fixtures" in the Baseline Register.
+Record both IDs and exact bodies. The `TEST-FIXTURE` prefix keeps them out of `linear_probe.py baseline`.
 
 ## Counting a denial
 A denial counts only if: (1) the same operation succeeds on an allowed fixture with valid input, (2) the response is an authorization error (HTTP or GraphQL `errors` inside HTTP 200), and (3) the reader confirms the protected fixture unchanged (content + parent). Timeout, schema error, expired key, missing tool, unrelated 404 = `BLOCKED`, not `PASS`.
@@ -39,9 +39,9 @@ A denial counts only if: (1) the same operation succeeds on an allowed fixture w
 Stop writer use. Record before/after. Revoke `sdd-drafts` key (Linear → Settings → Account → Security & Access). Human restores fixture from recorded body. Read back to confirm. Never broaden a key to make a test pass.
 
 ## Known gap: projects linked to Baselines (P09)
-Tested 2026-10-12: a Delivery-only Read+Write key **can** `projectCreate` with `teamIds` including Baselines (adding Baselines to an existing project did not take effect). It cannot touch Baselines team documents or the register.
+Tested 2026-10-12: a Delivery-only Read+Write key **can** `projectCreate` with `teamIds` including Baselines (adding Baselines to an existing project did not take effect). It cannot touch Baselines team documents.
 Operator decision (2026-10-12): accept with detection, not prevention.
-- Accepted scope = Baselines **team documents** listed in the register. Projects never live in Baselines.
+- Accepted scope = Baselines **team documents** (no project). Projects never live in Baselines.
 - `linear_probe.py audit` flags any project linked to Baselines and documents inside it; agents run it at start/resume.
 - Finding → operator reviews and deletes in the Linear UI.
 Stronger option if this ever matters more: move Baselines to a separate free workspace.

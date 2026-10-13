@@ -5,7 +5,7 @@ Linear CSV export covers issues/projects, **not** document bodies, comments, or 
 ## Export (on demand, at milestones)
 1. Inventory every in-scope document (paginate to the end). Record requested scope vs discovered.
 2. Save each body as `.sdd/exports/<date>/docs/<id>.md` (gitignored). Record ID, title, parent, URL, updatedAt, fetched-at.
-3. Re-check register and updatedAt after capture; note changes during capture.
+3. Re-run `linear_probe.py baseline` after capture and compare sha256s; note changes during capture (`updatedAt` is not reliable).
 4. Write `manifest.json` (format: `.sdd/scripts/verify_snapshot.py` docstring). Set `complete: false` if any page, body, attachment, or reference failed.
 5. Validate: `python -I .sdd/scripts/verify_snapshot.py .sdd/exports/<date>/manifest.json`
 6. Store only on existing private storage. Never in this public repo.

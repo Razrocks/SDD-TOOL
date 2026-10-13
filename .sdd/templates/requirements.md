@@ -2,13 +2,13 @@
 
 Record ID: <CLIENT-PROJECT>-REQ-v<N>
 Kind: requirements
-Status: AWAITING HUMAN PUBLICATION
+Status: draft until locked
 Owner: <project owner>
 Based on: <previous version ID, or NONE>
 Sources: <source references below>
 Related work: <GitHub repo / epic>
 
-> Becomes accepted only when a human publishes it in Baselines and the Baseline Register lists it.
+> Becomes accepted only when a human moves it into the Baselines team (team document, no project). Changes: unlock → edit → re-lock (`runbooks/publication.md`).
 
 ## Requirements
 ### REQ-001 <short name>
@@ -27,5 +27,5 @@ Related work: <GitHub repo / epic>
 - Access limits: <who can read it>
 
 ## Change log
-| Version | Delta | Published by | Date |
+| Version | Delta | Locked by | Date |
 |---|---|---|---|
