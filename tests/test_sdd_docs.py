@@ -174,6 +174,7 @@ class SessionRulesTests(unittest.TestCase):
 
     def test_context_has_rules_with_real_script_paths(self):
         p = Project()
+        session_rules.set_optin(p.map, "on")
         sub = p.root / "src" / "deep"
         sub.mkdir(parents=True)
         context = session_rules.build_context(sub)
@@ -181,6 +182,63 @@ class SessionRulesTests(unittest.TestCase):
         self.assertIn("doc prefix: Dice Roller", context)
         self.assertNotIn("{SCRIPTS}", context)
         self.assertIn((session_rules.ROOT / "scripts").as_posix(), context)
+
+
+class OptInTests(unittest.TestCase):
+    def test_no_choice_asks_on_fresh_session_without_rules(self):
+        p = Project()
+        self.assertEqual(session_rules.optin_state(p.map), "ask")
+        for source in (None, "startup", "clear"):
+            context = session_rules.build_context(p.root, source)
+            self.assertIn("Turn on the SDD Linear tool for this repo?", context)
+            self.assertIn("sdd_status.py\" optin on|later|off", context)
+            self.assertNotIn("# SDD workflow", context)       # rules only after a yes
+
+    def test_never_asks_when_session_compacts_or_resumes(self):
+        p = Project()
+        for state in (None, "later"):
+            if state:
+                session_rules.set_optin(p.map, state)
+            for source in ("compact", "resume"):
+                self.assertIsNone(session_rules.build_context(p.root, source))
+
+    def test_later_asks_again_next_fresh_session(self):
+        p = Project()
+        session_rules.set_optin(p.map, "later")
+        self.assertIn("Turn on the SDD Linear tool", session_rules.build_context(p.root, "startup"))
+
+    def test_off_is_silent_everywhere(self):
+        p = Project()
+        session_rules.set_optin(p.map, "off")
+        for source in (None, "startup", "clear", "compact", "resume"):
+            self.assertIsNone(session_rules.build_context(p.root, source))
+
+    def test_on_gives_rules_every_time_including_after_compaction(self):
+        p = Project()
+        session_rules.set_optin(p.map, "on")
+        for source in ("startup", "compact", "resume"):
+            self.assertIn("# SDD workflow", session_rules.build_context(p.root, source))
+
+    def test_bad_optin_file_means_ask(self):
+        p = Project()
+        (p.root / ".sdd" / "optin.json").write_text("{not json")
+        self.assertEqual(session_rules.optin_state(p.map), "ask")
+        (p.root / ".sdd" / "optin.json").write_text(json.dumps({"state": "maybe"}))
+        self.assertEqual(session_rules.optin_state(p.map), "ask")
+
+    def test_hook_main_reads_source_from_stdin(self):
+        p = Project()
+        payload = json.dumps({"cwd": str(p.root), "source": "compact"})
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(sys, "stdin", io.StringIO(payload)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(session_rules.main(), 0)
+        self.assertEqual(out.getvalue(), "")
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(sys, "stdin", io.StringIO(payload.replace("compact", "startup"))), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            session_rules.main()
+        self.assertIn("Turn on the SDD Linear tool", json.loads(out.getvalue())["hookSpecificOutput"]["additionalContext"])
 
 
 class FindMapTests(unittest.TestCase):

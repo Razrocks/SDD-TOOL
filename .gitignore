@@ -20,6 +20,9 @@ CLAUDE.local.md
 /.mcp.json
 .claude/settings.local.json
 .sdd/merges/
+.sdd/status.json
+.sdd/.status-shown.json
+.sdd/optin.json
 
 # Python
 __pycache__/

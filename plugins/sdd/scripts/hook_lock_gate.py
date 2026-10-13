@@ -10,8 +10,9 @@ import re
 import sys
 
 TRIGGERS = ("lock.py", "LINEAR_LOCK_KEY")
-ACTION = re.compile(r"lock\.py\b.*?\b(unlock|lock|apply)\b")
+ACTION = re.compile(r"lock\.py\b.*?\b(unlock|lock|apply|retitle)\b")
 TITLE = re.compile(r"--title\s+(?:\"([^\"]*)\"|'([^']*)'|(\S+))")
+NEW_TITLE = re.compile(r"--new-title\s+(?:\"([^\"]*)\"|'([^']*)'|(\S+))")
 
 
 def describe(command):
@@ -19,9 +20,12 @@ def describe(command):
     title = TITLE.search(command)
     name = next((group for group in title.groups() if group), None) if title else None
     if action and name:
+        new = NEW_TITLE.search(command)
+        new_name = next((group for group in new.groups() if group), None) if new else None
         where = {"lock": "into Baselines (accept)",
                  "unlock": "out of Baselines (unlock for editing)",
-                 "apply": "— write an approved merge into this accepted doc"}[action.group(1)]
+                 "apply": "— write an approved merge into this accepted doc (version in the title goes up by one)",
+                 "retitle": f'— rename this accepted doc to "{new_name}"'}[action.group(1)]
         return f'{action.group(1).upper()} "{name}" {where}. Owner approval required.'
     return ("Moves a document into or out of Baselines (accepted scope) or touches the lock key. "
             "Owner approval required.")

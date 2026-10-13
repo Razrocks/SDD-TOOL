@@ -11,7 +11,10 @@ and --title makes the document's name visible in that prompt.
       Snapshot the locked text, then Baselines -> Delivery.
   apply <id> --title "<title>" --content-file merged.md --expect-sha <sha256>
       Write an owner-approved merge into a locked document. Refused if the document changed
-      since the merge was planned (sha mismatch). Snapshots before and after.
+      since the merge was planned (sha mismatch). Snapshots before and after. A title ending in
+      " vN" is bumped to " vN+1" in the same write.
+  retitle <id> --title "<title>" --new-title "<title>"
+      Rename a locked document (title only). The project prefix must stay the same.
 
 Team IDs and the snapshot folder come from the project's .sdd/project-map.json (found by
 walking up from the working directory, or --project-map). Snapshots are stored as
@@ -23,6 +26,7 @@ Exit codes: 0 done and verified, 1 API failure or unverified result, 2 refused.
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,8 +44,21 @@ UPDATE = (
 )
 
 
+VERSION_SUFFIX = re.compile(r"^(.*\sv)(\d+)$")
+
+
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def bump_title(title):
+    """'X / Requirements v2' -> 'X / Requirements v3'. Titles without ' vN' stay unchanged."""
+    match = VERSION_SUFFIX.match(title)
+    return f"{match.group(1)}{int(match.group(2)) + 1}" if match else title
+
+
+def project_of(title):
+    return title.split(SEPARATOR, 1)[0] if SEPARATOR in title else None
 
 
 def read_doc(doc_id, cafile):
@@ -108,6 +125,7 @@ def run(args):
         return refuse("TEST-FIXTURE document (pass --allow-fixture to test)")
     current_team = (doc.get("team") or {}).get("id")
     before = None
+    expected_title = title
 
     if args.command == "lock":
         if current_team != delivery:
@@ -122,6 +140,13 @@ def run(args):
             return refuse("unlock moves Baselines documents only")
         before = save_snapshot(snapshot_dir, doc, "before unlock")
         update, expected_team = {"teamId": delivery}, delivery
+    elif args.command == "retitle":
+        if current_team != baselines:
+            return refuse("retitle renames locked (Baselines) documents only")
+        if not args.new_title.strip() or project_of(args.new_title) != project_of(title):
+            return refuse("the new title must keep the same '<project> / ' prefix")
+        expected_title = args.new_title
+        update, expected_team = {"title": expected_title}, baselines
     else:  # apply
         if current_team != baselines:
             return refuse("apply writes into locked (Baselines) documents only")
@@ -130,7 +155,8 @@ def run(args):
             return refuse("the accepted doc changed since the merge was planned; plan the merge again")
         merged = Path(args.content_file).read_text(encoding="utf-8")
         before = save_snapshot(snapshot_dir, doc, "before merge")
-        update, expected_team = {"content": merged}, baselines
+        expected_title = bump_title(title)
+        update, expected_team = {"content": merged, "title": expected_title}, baselines
 
     status, payload = lp.post_raw(UPDATE, {"id": doc["id"], "input": update}, LOCK_KEY_ENV, args.cafile)
     errors = errors_of(payload)
@@ -138,15 +164,16 @@ def run(args):
         after = read_doc(doc["id"], args.cafile) or {}
     except lp.ProbeError as exc:
         after, errors = {}, errors + [{"message": f"read-back failed: {exc}", "code": None}]
-    verified = (after.get("team") or {}).get("id") == expected_team and not after.get("project") and not errors
+    verified = ((after.get("team") or {}).get("id") == expected_team and not after.get("project")
+                and after.get("title", title) == expected_title and not errors)
     if verified and args.command == "apply":
         verified = sdd_merge.blocks(after.get("content")) == sdd_merge.blocks(merged)
 
     after_record = None
     if verified:
-        reason = {"lock": "locked", "unlock": "unlocked", "apply": "after merge"}[args.command]
+        reason = {"lock": "locked", "unlock": "unlocked", "apply": "after merge", "retitle": "renamed"}[args.command]
         after_record = save_snapshot(snapshot_dir, after, reason)
-        entry = {"id": doc["id"], "title": title, "url": doc.get("url"), "sha256": after_record["sha256"],
+        entry = {"id": doc["id"], "title": expected_title, "url": doc.get("url"), "sha256": after_record["sha256"],
                  "status": "unlocked" if args.command == "unlock" else "locked", "updated_at": now()}
         if before:
             entry["previous_sha256"] = before["sha256"]
@@ -156,6 +183,7 @@ def run(args):
         "action": args.command,
         "document": doc["id"],
         "title": title,
+        "new_title": expected_title if expected_title != title else None,
         "http_status": status,
         "errors": errors,
         "snapshot_before": before,
@@ -185,6 +213,10 @@ def main(argv=None):
     apply_cmd.add_argument("--title", required=True)
     apply_cmd.add_argument("--content-file", required=True)
     apply_cmd.add_argument("--expect-sha", required=True)
+    retitle_cmd = sub.add_parser("retitle")
+    retitle_cmd.add_argument("doc_id")
+    retitle_cmd.add_argument("--title", required=True)
+    retitle_cmd.add_argument("--new-title", required=True)
     return run(parser.parse_args(argv))
 
 

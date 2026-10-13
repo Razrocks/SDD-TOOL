@@ -9,7 +9,7 @@ description: Merge a draft back into its accepted doc with the owner reviewing e
    - conflict: draft | current | both | edit
    Use clickable questions for up to a few items; otherwise ask for one reply like "1 keep, 2 drop, 3 edit: <text>". Never decide for the owner.
 3. `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/sdd_docs.py" merge-build <draft id> --decisions '{"1":"keep","2":{"edit":"..."}}'` — writes the merged text and prints the exact `lock.py apply …` command.
-4. Run that command with `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/lock.py" …`. A permission prompt names the doc — the owner's final approval. Report `verified` and the new fingerprint.
+4. Run that command with `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/lock.py" …`. A permission prompt names the doc — the owner's final approval. A title ending in ` vN` becomes ` vN+1` in the same write. Report `verified`, the new title, and the new fingerprint.
 5. `python -I "${CLAUDE_PLUGIN_ROOT}/scripts/sdd_docs.py" draft-close <draft id> --status merged|partly-merged|rejected`.
 
 If apply refuses because the accepted doc changed, run merge-plan again (new conflicts may appear).

@@ -1,6 +1,6 @@
 # SDD workflow
 
-Scripts: `python -I "{SCRIPTS}/<script>.py" …` (if TLS fails with CERTIFICATE_VERIFY_FAILED, add `--cafile <a trusted CA bundle>`). Shortcuts: `/sdd:resume`, `/sdd:branch`, `/sdd:checkpoint`, `/sdd:draft`, `/sdd:merge`, `/sdd:lock`, `/sdd:merged`.
+Scripts: `python -I "{SCRIPTS}/<script>.py" …` (if TLS fails with CERTIFICATE_VERIFY_FAILED, add `--cafile <a trusted CA bundle>`). Shortcuts: `/sdd:resume`, `/sdd:branch`, `/sdd:checkpoint`, `/sdd:draft`, `/sdd:merge`, `/sdd:lock`, `/sdd:merged`, `/sdd:off`.
 
 ## What is authoritative
 - **Accepted** = documents in the Linear **Baselines** team (team docs, no project, not `TEST-FIXTURE`). Read with `linear-read`. Never edited directly: changes go through a personal draft and an owner-approved merge.

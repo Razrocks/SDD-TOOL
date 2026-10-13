@@ -165,7 +165,9 @@ def baselines_team_from_map(path=None):
 
 
 def tls_context(cafile):
-    # With cafile set, only that bundle is trusted; the system store is not merged in.
+    # With cafile set (flag or SDD_CAFILE, saved by sdd_setup.py when the system store fails),
+    # only that bundle is trusted; the system store is not merged in. Verification stays on.
+    cafile = cafile or os.environ.get("SDD_CAFILE")
     return ssl.create_default_context(cafile=cafile) if cafile else None
 
 
